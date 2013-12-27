@@ -2251,9 +2251,10 @@ static void intel_fdi_normal_train(struct drm_crtc *crtc)
 			   FDI_FE_ERRC_ENABLE);
 }
 
-static bool pipe_has_enabled_pch(struct intel_crtc *intel_crtc)
+static bool pipe_has_enabled_pch(struct intel_crtc *crtc)
 {
-	return intel_crtc->base.enabled && intel_crtc->config.has_pch_encoder;
+	return crtc->base.enabled && crtc->active &&
+		crtc->config.has_pch_encoder;
 }
 
 static void ivb_modeset_global_resources(struct drm_device *dev)
@@ -2901,6 +2902,48 @@ static void ironlake_pch_transcoder_set_timings(struct intel_crtc *crtc,
 		   I915_READ(VSYNCSHIFT(cpu_transcoder)));
 }
 
+static void cpt_enable_fdi_bc_bifurcation(struct drm_device *dev)
+{
+	struct drm_i915_private *dev_priv = dev->dev_private;
+	uint32_t temp;
+
+	temp = I915_READ(SOUTH_CHICKEN1);
+	if (temp & FDI_BC_BIFURCATION_SELECT)
+		return;
+
+	WARN_ON(I915_READ(FDI_RX_CTL(PIPE_B)) & FDI_RX_ENABLE);
+	WARN_ON(I915_READ(FDI_RX_CTL(PIPE_C)) & FDI_RX_ENABLE);
+
+	temp |= FDI_BC_BIFURCATION_SELECT;
+	DRM_DEBUG_KMS("enabling fdi C rx\n");
+	I915_WRITE(SOUTH_CHICKEN1, temp);
+	POSTING_READ(SOUTH_CHICKEN1);
+}
+
+static void ivybridge_update_fdi_bc_bifurcation(struct intel_crtc *intel_crtc)
+{
+	struct drm_device *dev = intel_crtc->base.dev;
+	struct drm_i915_private *dev_priv = dev->dev_private;
+
+	switch (intel_crtc->pipe) {
+	case PIPE_A:
+		break;
+	case PIPE_B:
+		if (intel_crtc->config.fdi_lanes > 2)
+			WARN_ON(I915_READ(SOUTH_CHICKEN1) & FDI_BC_BIFURCATION_SELECT);
+		else
+			cpt_enable_fdi_bc_bifurcation(dev);
+
+		break;
+	case PIPE_C:
+		cpt_enable_fdi_bc_bifurcation(dev);
+
+		break;
+	default:
+		BUG();
+	}
+}
+
 /*
  * Enable PCH resources required for PCH ports:
  *   - PCH PLLs
@@ -2918,6 +2961,9 @@ static void ironlake_pch_enable(struct drm_crtc *crtc)
 	u32 reg, temp;
 
 	assert_pch_transcoder_disabled(dev_priv, pipe);
+
+	if (IS_IVYBRIDGE(dev))
+		ivybridge_update_fdi_bc_bifurcation(intel_crtc);
 
 	/* Write the TU size bits before fdi link training, so that error
 	 * detection works. */
@@ -3890,8 +3936,6 @@ static void intel_connector_check_state(struct intel_connector *connector)
  * consider. */
 void intel_connector_dpms(struct drm_connector *connector, int mode)
 {
-	struct intel_encoder *encoder = intel_attached_encoder(connector);
-
 	/* All the simple cases only support two dpms states. */
 	if (mode != DRM_MODE_DPMS_ON)
 		mode = DRM_MODE_DPMS_OFF;
@@ -3902,10 +3946,8 @@ void intel_connector_dpms(struct drm_connector *connector, int mode)
 	connector->dpms = mode;
 
 	/* Only need to change hw state when actually enabled */
-	if (encoder->base.crtc)
-		intel_encoder_dpms(encoder, mode);
-	else
-		WARN_ON(encoder->connectors_active != false);
+	if (connector->encoder)
+		intel_encoder_dpms(to_intel_encoder(connector->encoder), mode);
 
 	intel_modeset_check_state(connector->dev);
 }
@@ -4735,6 +4777,10 @@ static void i9xx_set_pipeconf(struct intel_crtc *intel_crtc)
 
 	pipeconf = 0;
 
+	if (dev_priv->quirks & QUIRK_PIPEA_FORCE &&
+	    I915_READ(PIPECONF(intel_crtc->pipe)) & PIPECONF_ENABLE)
+		pipeconf |= PIPECONF_ENABLE;
+
 	if (intel_crtc->pipe == 0 && INTEL_INFO(dev)->gen < 4) {
 		/* Enable pixel doubling when the dot clock is > 90% of the (display)
 		 * core speed.
@@ -4836,9 +4882,6 @@ static int i9xx_crtc_mode_set(struct drm_crtc *crtc,
 		DRM_ERROR("Couldn't find PLL settings for mode!\n");
 		return -EINVAL;
 	}
-
-	/* Ensure that the cursor is valid for the new mode before changing... */
-	intel_crtc_update_cursor(crtc, true);
 
 	if (is_lvds && dev_priv->lvds_downclock_avail) {
 		/*
@@ -4945,6 +4988,22 @@ static bool i9xx_get_pipe_config(struct intel_crtc *crtc,
 	tmp = I915_READ(PIPECONF(crtc->pipe));
 	if (!(tmp & PIPECONF_ENABLE))
 		return false;
+
+	if (IS_G4X(dev) || IS_VALLEYVIEW(dev)) {
+		switch (tmp & PIPECONF_BPC_MASK) {
+		case PIPECONF_6BPC:
+			pipe_config->pipe_bpp = 18;
+			break;
+		case PIPECONF_8BPC:
+			pipe_config->pipe_bpp = 24;
+			break;
+		case PIPECONF_10BPC:
+			pipe_config->pipe_bpp = 30;
+			break;
+		default:
+			break;
+		}
+	}
 
 	intel_get_pipe_timings(crtc, pipe_config);
 
@@ -5499,48 +5558,6 @@ static bool ironlake_compute_clocks(struct drm_crtc *crtc,
 	return true;
 }
 
-static void cpt_enable_fdi_bc_bifurcation(struct drm_device *dev)
-{
-	struct drm_i915_private *dev_priv = dev->dev_private;
-	uint32_t temp;
-
-	temp = I915_READ(SOUTH_CHICKEN1);
-	if (temp & FDI_BC_BIFURCATION_SELECT)
-		return;
-
-	WARN_ON(I915_READ(FDI_RX_CTL(PIPE_B)) & FDI_RX_ENABLE);
-	WARN_ON(I915_READ(FDI_RX_CTL(PIPE_C)) & FDI_RX_ENABLE);
-
-	temp |= FDI_BC_BIFURCATION_SELECT;
-	DRM_DEBUG_KMS("enabling fdi C rx\n");
-	I915_WRITE(SOUTH_CHICKEN1, temp);
-	POSTING_READ(SOUTH_CHICKEN1);
-}
-
-static void ivybridge_update_fdi_bc_bifurcation(struct intel_crtc *intel_crtc)
-{
-	struct drm_device *dev = intel_crtc->base.dev;
-	struct drm_i915_private *dev_priv = dev->dev_private;
-
-	switch (intel_crtc->pipe) {
-	case PIPE_A:
-		break;
-	case PIPE_B:
-		if (intel_crtc->config.fdi_lanes > 2)
-			WARN_ON(I915_READ(SOUTH_CHICKEN1) & FDI_BC_BIFURCATION_SELECT);
-		else
-			cpt_enable_fdi_bc_bifurcation(dev);
-
-		break;
-	case PIPE_C:
-		cpt_enable_fdi_bc_bifurcation(dev);
-
-		break;
-	default:
-		BUG();
-	}
-}
-
 int ironlake_get_lanes_required(int target_clock, int link_bw, int bpp)
 {
 	/*
@@ -5688,9 +5705,6 @@ static int ironlake_crtc_mode_set(struct drm_crtc *crtc,
 		intel_crtc->config.dpll.p2 = clock.p2;
 	}
 
-	/* Ensure that the cursor is valid for the new mode before changing... */
-	intel_crtc_update_cursor(crtc, true);
-
 	/* CPU eDP is the only output that doesn't need a PCH PLL of its own. */
 	if (intel_crtc->config.has_pch_encoder) {
 		fp = i9xx_dpll_compute_fp(&intel_crtc->config.dpll);
@@ -5758,9 +5772,6 @@ static int ironlake_crtc_mode_set(struct drm_crtc *crtc,
 					     &intel_crtc->config.fdi_m_n);
 	}
 
-	if (IS_IVYBRIDGE(dev))
-		ivybridge_update_fdi_bc_bifurcation(intel_crtc);
-
 	ironlake_set_pipeconf(crtc);
 
 	/* Set up the display plane register */
@@ -5826,6 +5837,23 @@ static bool ironlake_get_pipe_config(struct intel_crtc *crtc,
 	tmp = I915_READ(PIPECONF(crtc->pipe));
 	if (!(tmp & PIPECONF_ENABLE))
 		return false;
+
+	switch (tmp & PIPECONF_BPC_MASK) {
+	case PIPECONF_6BPC:
+		pipe_config->pipe_bpp = 18;
+		break;
+	case PIPECONF_8BPC:
+		pipe_config->pipe_bpp = 24;
+		break;
+	case PIPECONF_10BPC:
+		pipe_config->pipe_bpp = 30;
+		break;
+	case PIPECONF_12BPC:
+		pipe_config->pipe_bpp = 36;
+		break;
+	default:
+		break;
+	}
 
 	if (I915_READ(PCH_TRANSCONF(crtc->pipe)) & TRANS_ENABLE) {
 		struct intel_shared_dpll *pll;
@@ -5896,9 +5924,6 @@ static int haswell_crtc_mode_set(struct drm_crtc *crtc,
 
 	if (!intel_ddi_pll_mode_set(crtc))
 		return -EINVAL;
-
-	/* Ensure that the cursor is valid for the new mode before changing... */
-	intel_crtc_update_cursor(crtc, true);
 
 	if (intel_crtc->config.has_dp_encoder)
 		intel_dp_set_m_n(intel_crtc);
@@ -6581,7 +6606,8 @@ static int intel_crtc_cursor_set(struct drm_crtc *crtc,
 	intel_crtc->cursor_width = width;
 	intel_crtc->cursor_height = height;
 
-	intel_crtc_update_cursor(crtc, intel_crtc->cursor_bo != NULL);
+	if (intel_crtc->active)
+		intel_crtc_update_cursor(crtc, intel_crtc->cursor_bo != NULL);
 
 	return 0;
 fail_unpin:
@@ -6600,7 +6626,8 @@ static int intel_crtc_cursor_move(struct drm_crtc *crtc, int x, int y)
 	intel_crtc->cursor_x = x;
 	intel_crtc->cursor_y = y;
 
-	intel_crtc_update_cursor(crtc, intel_crtc->cursor_bo != NULL);
+	if (intel_crtc->active)
+		intel_crtc_update_cursor(crtc, intel_crtc->cursor_bo != NULL);
 
 	return 0;
 }
@@ -7809,6 +7836,19 @@ intel_modeset_pipe_config(struct drm_crtc *crtc,
 	pipe_config->cpu_transcoder = to_intel_crtc(crtc)->pipe;
 	pipe_config->shared_dpll = DPLL_ID_PRIVATE;
 
+	/*
+	 * Sanitize sync polarity flags based on requested ones. If neither
+	 * positive or negative polarity is requested, treat this as meaning
+	 * negative polarity.
+	 */
+	if (!(pipe_config->adjusted_mode.flags &
+	      (DRM_MODE_FLAG_PHSYNC | DRM_MODE_FLAG_NHSYNC)))
+		pipe_config->adjusted_mode.flags |= DRM_MODE_FLAG_NHSYNC;
+
+	if (!(pipe_config->adjusted_mode.flags &
+	      (DRM_MODE_FLAG_PVSYNC | DRM_MODE_FLAG_NVSYNC)))
+		pipe_config->adjusted_mode.flags |= DRM_MODE_FLAG_NVSYNC;
+
 	/* Compute a starting value for pipe_config->pipe_bpp taking the source
 	 * plane pixel format and any sink constraints into account. Returns the
 	 * source plane bpp so that dithering can be selected on mismatches
@@ -8140,6 +8180,9 @@ intel_pipe_config_compare(struct drm_device *dev,
 	PIPE_CONF_CHECK_X(dpll_hw_state.dpll);
 	PIPE_CONF_CHECK_X(dpll_hw_state.fp0);
 	PIPE_CONF_CHECK_X(dpll_hw_state.fp1);
+
+	if (IS_G4X(dev) || INTEL_INFO(dev)->gen >= 5)
+		PIPE_CONF_CHECK_I(pipe_bpp);
 
 #undef PIPE_CONF_CHECK_X
 #undef PIPE_CONF_CHECK_I

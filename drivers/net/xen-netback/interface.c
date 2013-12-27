@@ -297,8 +297,7 @@ struct xenvif *xenvif_alloc(struct device *parent, domid_t domid,
 	vif->credit_bytes = vif->remaining_credit = ~0UL;
 	vif->credit_usec  = 0UL;
 	init_timer(&vif->credit_timeout);
-	/* Initialize 'expires' now: it's used to track the credit window. */
-	vif->credit_timeout.expires = jiffies;
+	vif->credit_window_start = get_jiffies_64();
 
 	dev->netdev_ops	= &xenvif_netdev_ops;
 	dev->hw_features = NETIF_F_SG | NETIF_F_IP_CSUM | NETIF_F_TSO;
@@ -326,6 +325,9 @@ struct xenvif *xenvif_alloc(struct device *parent, domid_t domid,
 	}
 
 	netdev_dbg(dev, "Successfully created xenvif\n");
+
+	__module_get(THIS_MODULE);
+
 	return vif;
 }
 
@@ -413,12 +415,6 @@ void xenvif_carrier_off(struct xenvif *vif)
 
 void xenvif_disconnect(struct xenvif *vif)
 {
-	/* Disconnect funtion might get called by generic framework
-	 * even before vif connects, so we need to check if we really
-	 * need to do a module_put.
-	 */
-	int need_module_put = 0;
-
 	if (netif_carrier_ok(vif->dev))
 		xenvif_carrier_off(vif);
 
@@ -432,18 +428,16 @@ void xenvif_disconnect(struct xenvif *vif)
 			unbind_from_irqhandler(vif->tx_irq, vif);
 			unbind_from_irqhandler(vif->rx_irq, vif);
 		}
-		/* vif->irq is valid, we had a module_get in
-		 * xenvif_connect.
-		 */
-		need_module_put = 1;
 	}
 
-	unregister_netdev(vif->dev);
-
 	xen_netbk_unmap_frontend_rings(vif);
+}
+
+void xenvif_free(struct xenvif *vif)
+{
+	unregister_netdev(vif->dev);
 
 	free_netdev(vif->dev);
 
-	if (need_module_put)
-		module_put(THIS_MODULE);
+	module_put(THIS_MODULE);
 }
