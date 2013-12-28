@@ -19,6 +19,7 @@
 #include <linux/virtio.h>
 #include <linux/virtio_ring.h>
 #include <linux/virtio_config.h>
+#include <linux/kmemleak.h>
 #include <linux/device.h>
 #include <linux/slab.h>
 #include <linux/module.h>
