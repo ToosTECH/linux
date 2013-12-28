@@ -22,8 +22,7 @@
 #include <linux/jiffies.h>
 #include <linux/of.h>
 #include <linux/i2c.h>
-#include <linux/i2c/at24.h>
-#include <linux/i2c/eeprom.h>
+#include <linux/platform_data/at24.h>
 
 /*
  * I2C EEPROMs from most vendors are inexpensive and mostly interchangeable.
@@ -429,6 +428,9 @@ static ssize_t at24_bin_write(struct file *filp, struct kobject *kobj,
 {
 	struct at24_data *at24;
 
+	if (unlikely(off >= attr->size))
+		return -EFBIG;
+
 	at24 = dev_get_drvdata(container_of(kobj, struct device, kobj));
 	return at24_write(at24, buf, off, count);
 }
@@ -659,27 +661,6 @@ static int at24_remove(struct i2c_client *client)
 	return 0;
 }
 
-static int at24_command(struct i2c_client *client, unsigned int cmd, void *arg)
-{
-	struct at24_data *at24;
-	const struct memory_accessor **maccp;
-
-	/* only supporting a single command */
-	if (cmd != I2C_EEPROM_GET_MEMORY_ACCESSOR)
-		return -ENOTSUPP;
-
-	/* rudimentary check */
-	if (arg == NULL)
-		return -EINVAL;
-
-	at24 = i2c_get_clientdata(client);
-
-	maccp = arg;
-	*maccp = &at24->macc;
-
-	return 0;
-}
-
 /*-------------------------------------------------------------------------*/
 
 static struct i2c_driver at24_driver = {
@@ -690,7 +671,6 @@ static struct i2c_driver at24_driver = {
 	.probe = at24_probe,
 	.remove = at24_remove,
 	.id_table = at24_ids,
-	.command = at24_command,
 };
 
 static int __init at24_init(void)

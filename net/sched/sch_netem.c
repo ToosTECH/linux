@@ -235,7 +235,6 @@ static bool loss_4state(struct netem_sched_data *q)
 			clg->state = 2;
 		else if (clg->a3 < rnd && rnd < clg->a2 + clg->a3) {
 			clg->state = 1;
-			return true;
 		} else if (clg->a2 + clg->a3 < rnd) {
 			clg->state = 3;
 			return true;
@@ -427,12 +426,9 @@ static int netem_enqueue(struct sk_buff *skb, struct Qdisc *sch)
 
 	/* If a delay is expected, orphan the skb. (orphaning usually takes
 	 * place at TX completion time, so _before_ the link transit delay)
-	 * Ideally, this orphaning should be done after the rate limiting
-	 * module, because this breaks TCP Small Queue, and other mechanisms
-	 * based on socket sk_wmem_alloc.
 	 */
 	if (q->latency || q->jitter)
-		skb_orphan(skb);
+		skb_orphan_partial(skb);
 
 	/*
 	 * If we need to duplicate packet, then re-insert at top of the

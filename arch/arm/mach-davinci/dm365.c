@@ -19,6 +19,9 @@
 #include <linux/dma-mapping.h>
 #include <linux/spi/spi.h>
 #include <linux/platform_data/edma.h>
+#include <linux/platform_data/gpio-davinci.h>
+#include <linux/platform_data/keyscan-davinci.h>
+#include <linux/platform_data/spi-davinci.h>
 
 #include <asm/mach/map.h>
 
@@ -29,9 +32,6 @@
 #include <mach/time.h>
 #include <mach/serial.h>
 #include <mach/common.h>
-#include <linux/platform_data/keyscan-davinci.h>
-#include <linux/platform_data/spi-davinci.h>
-#include <mach/gpio-davinci.h>
 
 #include "davinci.h"
 #include "clock.h"
@@ -477,6 +477,7 @@ static struct clk_lookup dm365_clks[] = {
 	CLK(NULL, "timer3", &timer3_clk),
 	CLK(NULL, "usb", &usb_clk),
 	CLK("davinci_emac.1", NULL, &emac_clk),
+	CLK("davinci_mdio.0", "fck", &emac_clk),
 	CLK("davinci_voicecodec", NULL, &voicecodec_clk),
 	CLK("davinci-mcbsp", NULL, &asp0_clk),
 	CLK(NULL, "rto", &rto_clk),
@@ -695,6 +696,32 @@ void __init dm365_init_spi0(unsigned chipselect_mask,
 	spi_register_board_info(info, len);
 
 	platform_device_register(&dm365_spi0_device);
+}
+
+static struct resource dm365_gpio_resources[] = {
+	{	/* registers */
+		.start	= DAVINCI_GPIO_BASE,
+		.end	= DAVINCI_GPIO_BASE + SZ_4K - 1,
+		.flags	= IORESOURCE_MEM,
+	},
+	{	/* interrupt */
+		.start	= IRQ_DM365_GPIO0,
+		.end	= IRQ_DM365_GPIO7,
+		.flags	= IORESOURCE_IRQ,
+	},
+};
+
+static struct davinci_gpio_platform_data dm365_gpio_platform_data = {
+	.ngpio		= 104,
+	.intc_irq_num	= DAVINCI_N_AINTC_IRQ,
+	.gpio_unbanked	= 8,
+};
+
+int __init dm365_gpio_register(void)
+{
+	return davinci_gpio_register(dm365_gpio_resources,
+				     sizeof(dm365_gpio_resources),
+				     &dm365_gpio_platform_data);
 }
 
 static struct emac_platform_data dm365_emac_pdata = {
@@ -1068,7 +1095,7 @@ static struct plat_serial8250_port dm365_serial1_platform_data[] = {
 	}
 };
 
-static struct platform_device dm365_serial_device[] = {
+struct platform_device dm365_serial_device[] = {
 	{
 		.name			= "serial8250",
 		.id			= PLAT8250_DEV_PLATFORM,
@@ -1104,12 +1131,6 @@ static struct davinci_soc_info davinci_soc_info_dm365 = {
 	.intc_irq_prios		= dm365_default_priorities,
 	.intc_irq_num		= DAVINCI_N_AINTC_IRQ,
 	.timer_info		= &dm365_timer_info,
-	.gpio_type		= GPIO_TYPE_DAVINCI,
-	.gpio_base		= DAVINCI_GPIO_BASE,
-	.gpio_num		= 104,
-	.gpio_irq		= IRQ_DM365_GPIO0,
-	.gpio_unbanked		= 8,	/* really 16 ... skip muxed GPIOs */
-	.serial_dev		= dm365_serial_device,
 	.emac_pdata		= &dm365_emac_pdata,
 	.sram_dma		= 0x00010000,
 	.sram_len		= SZ_32K,
@@ -1423,8 +1444,6 @@ static int __init dm365_init_devices(void)
 
 	platform_device_register(&dm365_mdio_device);
 	platform_device_register(&dm365_emac_device);
-	clk_add_alias(NULL, dev_name(&dm365_mdio_device.dev),
-		      NULL, &dm365_emac_device.dev);
 
 	return 0;
 }

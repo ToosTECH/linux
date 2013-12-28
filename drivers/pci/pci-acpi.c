@@ -181,7 +181,6 @@ static bool acpi_pci_power_manageable(struct pci_dev *dev)
 static int acpi_pci_set_power_state(struct pci_dev *dev, pci_power_t state)
 {
 	acpi_handle handle = DEVICE_ACPI_HANDLE(&dev->dev);
-	acpi_handle tmp;
 	static const u8 state_conv[] = {
 		[PCI_D0] = ACPI_STATE_D0,
 		[PCI_D1] = ACPI_STATE_D1,
@@ -192,7 +191,7 @@ static int acpi_pci_set_power_state(struct pci_dev *dev, pci_power_t state)
 	int error = -EINVAL;
 
 	/* If the ACPI device has _EJ0, ignore the device */
-	if (!handle || ACPI_SUCCESS(acpi_get_handle(handle, "_EJ0", &tmp)))
+	if (!handle || acpi_has_method(handle, "_EJ0"))
 		return -ENODEV;
 
 	switch (state) {
@@ -210,7 +209,7 @@ static int acpi_pci_set_power_state(struct pci_dev *dev, pci_power_t state)
 	}
 
 	if (!error)
-		dev_info(&dev->dev, "power state changed by ACPI to %s\n",
+		dev_dbg(&dev->dev, "power state changed by ACPI to %s\n",
 			 acpi_power_state_string(state_conv[state]));
 
 	return error;
@@ -290,24 +289,16 @@ static struct pci_platform_pm_ops acpi_pci_platform_pm = {
 
 void acpi_pci_add_bus(struct pci_bus *bus)
 {
-	acpi_handle handle = NULL;
-
-	if (bus->bridge)
-		handle = ACPI_HANDLE(bus->bridge);
-	if (acpi_pci_disabled || handle == NULL)
+	if (acpi_pci_disabled || !bus->bridge)
 		return;
 
-	acpi_pci_slot_enumerate(bus, handle);
-	acpiphp_enumerate_slots(bus, handle);
+	acpi_pci_slot_enumerate(bus);
+	acpiphp_enumerate_slots(bus);
 }
 
 void acpi_pci_remove_bus(struct pci_bus *bus)
 {
-	/*
-	 * bus->bridge->acpi_node.handle has already been reset to NULL
-	 * when acpi_pci_remove_bus() is called, so don't check ACPI handle.
-	 */
-	if (acpi_pci_disabled)
+	if (acpi_pci_disabled || !bus->bridge)
 		return;
 
 	acpiphp_remove_slots(bus);

@@ -218,8 +218,9 @@ static void shm_destroy(struct ipc_namespace *ns, struct shmid_kernel *shp)
 	if (!is_file_hugepages(shm_file))
 		shmem_lock(shm_file, 0, shp->mlock_user);
 	else if (shp->mlock_user)
-		user_shm_unlock(file_inode(shm_file)->i_size, shp->mlock_user);
-	fput(shm_file);
+		user_shm_unlock(file_inode(shp->shm_file)->i_size,
+						shp->mlock_user);
+	fput (shp->shm_file);
 	ipc_rcu_putref(shp, shm_rcu_free);
 }
 

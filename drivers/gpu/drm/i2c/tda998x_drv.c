@@ -17,6 +17,7 @@
 
 
 
+#include <linux/hdmi.h>
 #include <linux/module.h>
 
 #include <drm/drmP.h>
@@ -222,6 +223,12 @@ struct tda998x_priv {
 #define REG_PLL_SCGR1             REG(0x02, 0x09)     /* read/write */
 #define REG_PLL_SCGR2             REG(0x02, 0x0a)     /* read/write */
 #define REG_AUDIO_DIV             REG(0x02, 0x0e)     /* read/write */
+# define AUDIO_DIV_SERCLK_1       0
+# define AUDIO_DIV_SERCLK_2       1
+# define AUDIO_DIV_SERCLK_4       2
+# define AUDIO_DIV_SERCLK_8       3
+# define AUDIO_DIV_SERCLK_16      4
+# define AUDIO_DIV_SERCLK_32      5
 #define REG_SEL_CLK               REG(0x02, 0x11)     /* read/write */
 # define SEL_CLK_SEL_CLK1         (1 << 0)
 # define SEL_CLK_SEL_VRF_CLK(x)   (((x) & 3) << 1)
@@ -481,13 +488,16 @@ tda998x_reset(struct drm_encoder *encoder)
 	reg_write(encoder, REG_SERIALIZER,   0x00);
 	reg_write(encoder, REG_BUFFER_OUT,   0x00);
 	reg_write(encoder, REG_PLL_SCG1,     0x00);
-	reg_write(encoder, REG_AUDIO_DIV,    0x03);
+	reg_write(encoder, REG_AUDIO_DIV,    AUDIO_DIV_SERCLK_8);
 	reg_write(encoder, REG_SEL_CLK,      SEL_CLK_SEL_CLK1 | SEL_CLK_ENA_SC_CLK);
 	reg_write(encoder, REG_PLL_SCGN1,    0xfa);
 	reg_write(encoder, REG_PLL_SCGN2,    0x00);
 	reg_write(encoder, REG_PLL_SCGR1,    0x5b);
 	reg_write(encoder, REG_PLL_SCGR2,    0x00);
 	reg_write(encoder, REG_PLL_SCG2,     0x10);
+
+	/* Write the default value MUX register */
+	reg_write(encoder, REG_MUX_VP_VIP_OUT, 0x24);
 }
 
 static uint8_t tda998x_cksum(uint8_t *buf, size_t bytes)
@@ -540,6 +550,8 @@ tda998x_write_avi(struct drm_encoder *encoder, struct drm_display_mode *mode)
 	buf[HB(0)] = 0x82;
 	buf[HB(1)] = 0x02;
 	buf[HB(2)] = 13;
+	buf[PB(1)] = HDMI_SCAN_MODE_UNDERSCAN;
+	buf[PB(3)] = HDMI_QUANTIZATION_RANGE_FULL << 2;
 	buf[PB(4)] = drm_match_cea_mode(mode);
 
 	tda998x_write_if(encoder, DIP_IF_FLAGS_IF2, REG_IF2_HB0, buf,
@@ -558,23 +570,17 @@ static void tda998x_audio_mute(struct drm_encoder *encoder, bool on)
 }
 
 static void
-tda998x_configure_audio(struct drm_encoder *encoder, struct tda998x_encoder_params *p)
+tda998x_configure_audio(struct drm_encoder *encoder,
+		struct drm_display_mode *mode, struct tda998x_encoder_params *p)
 {
-	uint8_t buf[6], clksel_aip, clksel_fs, ca_i2s, cts_n;
+	uint8_t buf[6], clksel_aip, clksel_fs, ca_i2s, cts_n, adiv;
 	uint32_t n;
 
-	/* SetAudioPortConfig */
+	/* Enable audio ports */
 	reg_write(encoder, REG_ENA_AP, p->audio_cfg);
-	/* SetAudioClockPortConfig */
 	reg_write(encoder, REG_ENA_ACLK, p->audio_clk_cfg);
 
-	/*
-	 * layout = channelAllocation ? 1 : 0;
-	 * AudioInSetConfig(format, i2sFormat, channelAllocation,
-	 *   HDMITX_CHAN_NO_CHANGE, HDMITX_CLKPOLDSD_NO_CHANGE,
-	 *   HDMITX_SWAPDSD_NO_CHANGE, layout, HDMITX_LATENCY_CURRENT,
-	 *   dstRate)
-	 */
+	/* Set audio input source */
 	switch (p->audio_format) {
 	case AFMT_SPDIF:
 		reg_write(encoder, REG_MUX_AP, 0x40);
@@ -591,28 +597,33 @@ tda998x_configure_audio(struct drm_encoder *encoder, struct tda998x_encoder_para
 		/* ACLK */
 		clksel_fs = AIP_CLKSEL_FS(0);
 		cts_n = CTS_N_M(3) | CTS_N_K(3);
-		ca_i2s = CA_I2S_CA_I2S(0 /* channel allocation */);
+		ca_i2s = CA_I2S_CA_I2S(0);
 		break;
+
+	default:
+		BUG();
+		return;
 	}
 
 	reg_write(encoder, REG_AIP_CLKSEL, clksel_aip);
-//	reg_write(encoder, REG_CA_I2S, ca_i2s);
-//	reg_write(encoder, REG_I2S_FORMAT, I2S_FORMAT(0 /* i2s format */));
 	reg_clear(encoder, REG_AIP_CNTRL_0, AIP_CNTRL_0_LAYOUT);
-	/* latency? */
 
-	/* get video format */
-
-	/*
-	 * ctsRef = HDMITX_CTSREF_FS64SPDIF, uCtsX = HDMITX_CTSX_64
-	 * AudioInSetCts(ctsRef, rate, VidFmt, vOutFreq,
-	 *   HDMITX_CTS_AUTO, uCtsX, HDMITX_CTSK_USE_CTSX,
-	 *   HDMITX_CTSMTS_USE_CTSX, dstRate)
-	 */
-	/* Auto CTS */
+	/* Enable automatic CTS generation */
 	reg_clear(encoder, REG_AIP_CNTRL_0, AIP_CNTRL_0_ACR_MAN);
 	reg_write(encoder, REG_CTS_N, cts_n);
-	reg_write(encoder, REG_AUDIO_DIV, 3);
+
+	/*
+	 * Audio input somehow depends on HDMI line rate which is
+	 * related to pixclk. Testing showed that modes with pixclk
+	 * >100MHz need a larger divider while <40MHz need the default.
+	 * There is no detailed info in the datasheet, so we just
+	 * assume 100MHz requires larger divider.
+	 */
+	if (mode->clock > 100000)
+		adiv = AUDIO_DIV_SERCLK_16;
+	else
+		adiv = AUDIO_DIV_SERCLK_8;
+	reg_write(encoder, REG_AUDIO_DIV, adiv);
 
 	/*
 	 * This is the approximate value of N, which happens to be
@@ -673,9 +684,6 @@ tda998x_encoder_set_config(struct drm_encoder *encoder, void *params)
 			    (p->mirr_f ? VIP_CNTRL_2_MIRR_F : 0);
 
 	priv->params = *p;
-
-	if (p->audio_cfg)
-		tda998x_configure_audio(encoder, p);
 }
 
 static void
@@ -692,11 +700,7 @@ tda998x_encoder_dpms(struct drm_encoder *encoder, int mode)
 
 	switch (mode) {
 	case DRM_MODE_DPMS_ON:
-		/* Write the default value MUX register */
-		reg_write(encoder, REG_MUX_VP_VIP_OUT, 0x24);
-		/* enable audio and video ports */
-//		reg_write(encoder, REG_ENA_AP, priv->ena_ap);
-//		reg_write(encoder, REG_ENA_ACLK, priv->ena_aclk);
+		/* enable video ports, audio will be enabled later */
 		reg_write(encoder, REG_ENA_VP_0, 0xff);
 		reg_write(encoder, REG_ENA_VP_1, 0xff);
 		reg_write(encoder, REG_ENA_VP_2, 0xff);
@@ -706,8 +710,7 @@ tda998x_encoder_dpms(struct drm_encoder *encoder, int mode)
 		reg_write(encoder, REG_VIP_CNTRL_2, priv->vip_cntrl_2);
 		break;
 	case DRM_MODE_DPMS_OFF:
-		/* disable audio and video ports */
-//		reg_write(encoder, REG_ENA_AP, 0x00);
+		/* disable video ports */
 		reg_write(encoder, REG_ENA_VP_0, 0x00);
 		reg_write(encoder, REG_ENA_VP_1, 0x00);
 		reg_write(encoder, REG_ENA_VP_2, 0x00);
@@ -763,7 +766,9 @@ tda998x_encoder_mode_set(struct drm_encoder *encoder,
 	 * Internally TDA998x is using ITU-R BT.656 style sync but
 	 * we get VESA style sync. TDA998x is using a reference pixel
 	 * relative to ITU to sync to the input frame and for output
-	 * sync generation.
+	 * sync generation. Currently, we are using reference detection
+	 * from HS/VS, i.e. REFPIX/REFLINE denote frame start sync point
+	 * which is position of rising VS with coincident rising HS.
 	 *
 	 * Now there is some issues to take care of:
 	 * - HDMI data islands require sync-before-active
@@ -777,21 +782,19 @@ tda998x_encoder_mode_set(struct drm_encoder *encoder,
 	n_pix        = mode->htotal;
 	n_line       = mode->vtotal;
 
-	ref_pix      = 3 + mode->hsync_start - mode->hdisplay;
+	hs_pix_e     = mode->hsync_end - mode->hdisplay;
+	hs_pix_s     = mode->hsync_start - mode->hdisplay;
+	de_pix_e     = mode->htotal;
+	de_pix_s     = mode->htotal - mode->hdisplay;
+	ref_pix      = 3 + hs_pix_s;
 
 	/*
-	 * handle issue on TILCDC where it is outputing
-	 * non-VESA compliant sync signals the workaround
-	 * forces us to invert the HSYNC, so need to adjust display to
-	 * the left by hskew pixels, provided by the tilcdc driver
+	 * Attached LCD controllers may generate broken sync. Allow
+	 * those to adjust the position of the rising VS edge by adding
+	 * HSKEW to ref_pix.
 	 */
-	if(adjusted_mode && adjusted_mode->flags & DRM_MODE_FLAG_HSKEW)
+	if (adjusted_mode->flags & DRM_MODE_FLAG_HSKEW)
 		ref_pix += adjusted_mode->hskew;
-
-	de_pix_s     = mode->htotal - mode->hdisplay;
-	de_pix_e     = de_pix_s + mode->hdisplay;
-	hs_pix_s     = mode->hsync_start - mode->hdisplay;
-	hs_pix_e     = hs_pix_s + mode->hsync_end - mode->hsync_start;
 
 	if ((mode->flags & DRM_MODE_FLAG_INTERLACE) == 0) {
 		ref_line     = 1 + mode->vsync_start - mode->vdisplay;
@@ -926,7 +929,8 @@ tda998x_encoder_mode_set(struct drm_encoder *encoder,
 		tda998x_write_avi(encoder, adjusted_mode);
 
 		if (priv->params.audio_cfg)
-			tda998x_configure_audio(encoder, &priv->params);
+			tda998x_configure_audio(encoder, adjusted_mode,
+						&priv->params);
 	}
 }
 
@@ -1122,40 +1126,6 @@ tda998x_remove(struct i2c_client *client)
 	return 0;
 }
 
-static ssize_t i2c_read_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t size)
-{
-	struct drm_encoder *encoder = dev_get_drvdata(dev);
-	unsigned int page, addr;
-	unsigned char val;
-
-	sscanf(buf, "%x %x", &page, &addr);
-
-	val = reg_read(encoder, REG(page, addr));
-
-	printk("i2c read %02x @ page:%02x address:%02x\n", val, page, addr);
-	return size;
-}
-
-static ssize_t i2c_write_store(struct device *dev, struct device_attribute *attr, const char *buf, size_t size)
-{
-	struct drm_encoder *encoder = dev_get_drvdata(dev);
-	unsigned int page, addr, mask, val;
-	unsigned char rval;
-
-	sscanf(buf, "%x %x %x %x", &page, &addr, &mask, &val);
-
-	rval = reg_read(encoder, REG(page, addr));
-	rval &= ~mask;
-	rval |= val & mask;
-	reg_write(encoder, REG(page, addr), rval);
-
-	printk("i2c write %02x @ page:%02x address:%02x\n", rval, page, addr);
-	return size;
-}
-
-static DEVICE_ATTR(i2c_read, S_IWUSR, NULL, i2c_read_store);
-static DEVICE_ATTR(i2c_write, S_IWUSR, NULL, i2c_write_store);
-
 static int
 tda998x_encoder_init(struct i2c_client *client,
 		    struct drm_device *dev,
@@ -1163,11 +1133,6 @@ tda998x_encoder_init(struct i2c_client *client,
 {
 	struct drm_encoder *encoder = &encoder_slave->base;
 	struct tda998x_priv *priv;
-/* debug */
-	device_create_file(&client->dev, &dev_attr_i2c_read);
-	device_create_file(&client->dev, &dev_attr_i2c_write);
-	dev_set_drvdata(&client->dev, encoder);
-/* debug end */
 
 	priv = kzalloc(sizeof(*priv), GFP_KERNEL);
 	if (!priv)

@@ -15,7 +15,7 @@
  * this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 
-#include <linux/kfifo.h>
+#include "drm_flip_work.h"
 
 #include "tilcdc_drv.h"
 #include "tilcdc_regs.h"
@@ -35,21 +35,18 @@ struct tilcdc_crtc {
 	struct drm_framebuffer *scanout[2];
 
 	/* for deferred fb unref's: */
-	DECLARE_KFIFO_PTR(unref_fifo, struct drm_framebuffer *);
-	struct work_struct work;
+	struct drm_flip_work unref_work;
 };
 #define to_tilcdc_crtc(x) container_of(x, struct tilcdc_crtc, base)
 
-static void unref_worker(struct work_struct *work)
+static void unref_worker(struct drm_flip_work *work, void *val)
 {
 	struct tilcdc_crtc *tilcdc_crtc =
-		container_of(work, struct tilcdc_crtc, work);
+		container_of(work, struct tilcdc_crtc, unref_work);
 	struct drm_device *dev = tilcdc_crtc->base.dev;
-	struct drm_framebuffer *fb;
 
 	mutex_lock(&dev->mode_config.mutex);
-	while (kfifo_get(&tilcdc_crtc->unref_fifo, &fb))
-		drm_framebuffer_unreference(fb);
+	drm_framebuffer_unreference(val);
 	mutex_unlock(&dev->mode_config.mutex);
 }
 
@@ -68,22 +65,19 @@ static void set_scanout(struct drm_crtc *crtc, int n)
 	};
 	struct tilcdc_crtc *tilcdc_crtc = to_tilcdc_crtc(crtc);
 	struct drm_device *dev = crtc->dev;
+	struct tilcdc_drm_private *priv = dev->dev_private;
 
+	pm_runtime_get_sync(dev->dev);
 	tilcdc_write(dev, base_reg[n], tilcdc_crtc->start);
 	tilcdc_write(dev, ceil_reg[n], tilcdc_crtc->end);
 	if (tilcdc_crtc->scanout[n]) {
-		if (kfifo_put(&tilcdc_crtc->unref_fifo,
-				(const struct drm_framebuffer **)&tilcdc_crtc->scanout[n])) {
-			struct tilcdc_drm_private *priv = dev->dev_private;
-			queue_work(priv->wq, &tilcdc_crtc->work);
-		} else {
-			dev_err(dev->dev, "unref fifo full!\n");
-			drm_framebuffer_unreference(tilcdc_crtc->scanout[n]);
-		}
+		drm_flip_work_queue(&tilcdc_crtc->unref_work, tilcdc_crtc->scanout[n]);
+		drm_flip_work_commit(&tilcdc_crtc->unref_work, priv->wq);
 	}
 	tilcdc_crtc->scanout[n] = crtc->fb;
 	drm_framebuffer_reference(tilcdc_crtc->scanout[n]);
 	tilcdc_crtc->dirty &= ~stat[n];
+	pm_runtime_put_sync(dev->dev);
 }
 
 static void update_scanout(struct drm_crtc *crtc)
@@ -147,14 +141,15 @@ static void tilcdc_crtc_destroy(struct drm_crtc *crtc)
 	WARN_ON(tilcdc_crtc->dpms == DRM_MODE_DPMS_ON);
 
 	drm_crtc_cleanup(crtc);
-	WARN_ON(!kfifo_is_empty(&tilcdc_crtc->unref_fifo));
-	kfifo_free(&tilcdc_crtc->unref_fifo);
+	drm_flip_work_cleanup(&tilcdc_crtc->unref_work);
+
 	kfree(tilcdc_crtc);
 }
 
 static int tilcdc_crtc_page_flip(struct drm_crtc *crtc,
 		struct drm_framebuffer *fb,
-		struct drm_pending_vblank_event *event)
+		struct drm_pending_vblank_event *event,
+		uint32_t page_flip_flags)
 {
 	struct tilcdc_crtc *tilcdc_crtc = to_tilcdc_crtc(crtc);
 	struct drm_device *dev = crtc->dev;
@@ -166,9 +161,7 @@ static int tilcdc_crtc_page_flip(struct drm_crtc *crtc,
 
 	crtc->fb = fb;
 	tilcdc_crtc->event = event;
-	pm_runtime_get_sync(dev->dev);
 	update_scanout(crtc);
-	pm_runtime_put_sync(dev->dev);
 
 	return 0;
 }
@@ -380,9 +373,9 @@ static int tilcdc_crtc_mode_set(struct drm_crtc *crtc,
 		tilcdc_clear(dev, LCDC_RASTER_TIMING_2_REG, LCDC_SYNC_EDGE);
 
 	/*
-	 * use value from adjusted_mode here as this might have been changed as part
-	 * of the fixup for NXP TDA998x to solve the issue where tilcdc timings are
-	 * not VESA compliant
+	 * use value from adjusted_mode here as this might have been
+	 * changed as part of the fixup for slave encoders to solve the
+	 * issue where tilcdc timings are not VESA compliant
 	 */
 	if (adjusted_mode->flags & DRM_MODE_FLAG_NHSYNC)
 		tilcdc_set(dev, LCDC_RASTER_TIMING_2_REG, LCDC_INVERT_HSYNC);
@@ -411,11 +404,7 @@ static int tilcdc_crtc_mode_set(struct drm_crtc *crtc,
 static int tilcdc_crtc_mode_set_base(struct drm_crtc *crtc, int x, int y,
 		struct drm_framebuffer *old_fb)
 {
-	struct drm_device *dev = crtc->dev;
-
-	pm_runtime_get_sync(dev->dev);
 	update_scanout(crtc);
-	pm_runtime_put_sync(dev->dev);
 	return 0;
 }
 
@@ -675,13 +664,12 @@ struct drm_crtc *tilcdc_crtc_create(struct drm_device *dev)
 	tilcdc_crtc->dpms = DRM_MODE_DPMS_OFF;
 	init_waitqueue_head(&tilcdc_crtc->frame_done_wq);
 
-	ret = kfifo_alloc(&tilcdc_crtc->unref_fifo, 16, GFP_KERNEL);
+	ret = drm_flip_work_init(&tilcdc_crtc->unref_work, 16,
+			"unref", unref_worker);
 	if (ret) {
 		dev_err(dev->dev, "could not allocate unref FIFO\n");
 		goto fail;
 	}
-
-	INIT_WORK(&tilcdc_crtc->work, unref_worker);
 
 	ret = drm_crtc_init(dev, crtc, &tilcdc_crtc_funcs);
 	if (ret < 0)
@@ -693,60 +681,5 @@ struct drm_crtc *tilcdc_crtc_create(struct drm_device *dev)
 
 fail:
 	tilcdc_crtc_destroy(crtc);
-	return NULL;
-}
-
-struct tilcdc_panel_info *tilcdc_of_get_panel_info(struct device_node *np)
-{
-	struct device_node *info_np;
-	struct tilcdc_panel_info *info;
-	int ret = 0;
-
-	if (!np)
-		return NULL;
-
-	info_np = of_get_child_by_name(np, "panel-info");
-	if (!info_np) {
-		pr_err("%s: could not find panel-info node\n",
-				of_node_full_name(np));
-		return NULL;
-	}
-
-	info = kzalloc(sizeof(*info), GFP_KERNEL);
-	if (!info) {
-		pr_err("%s: allocation failed\n",
-				of_node_full_name(np));
-		goto err_no_mem;
-	}
-
-	ret |= of_property_read_u32(info_np, "ac-bias", &info->ac_bias);
-	ret |= of_property_read_u32(info_np, "ac-bias-intrpt", &info->ac_bias_intrpt);
-	ret |= of_property_read_u32(info_np, "dma-burst-sz", &info->dma_burst_sz);
-	ret |= of_property_read_u32(info_np, "bpp", &info->bpp);
-	ret |= of_property_read_u32(info_np, "fdd", &info->fdd);
-	ret |= of_property_read_u32(info_np, "sync-edge", &info->sync_edge);
-	ret |= of_property_read_u32(info_np, "sync-ctrl", &info->sync_ctrl);
-	ret |= of_property_read_u32(info_np, "raster-order", &info->raster_order);
-	ret |= of_property_read_u32(info_np, "fifo-th", &info->fifo_th);
-
-	/* optional: */
-	info->tft_alt_mode      = of_property_read_bool(info_np, "tft-alt-mode");
-	info->invert_pxl_clk    = of_property_read_bool(info_np, "invert-pxl-clk");
-
-	if (ret) {
-		pr_err("%s: error reading panel-info properties\n",
-				of_node_full_name(info_np));
-		goto err_bad_prop;
-	}
-
-	/* release ref */
-	of_node_put(info_np);
-
-	return info;
-
-err_bad_prop:
-	kfree(info);
-err_no_mem:
-	of_node_put(info_np);
 	return NULL;
 }
