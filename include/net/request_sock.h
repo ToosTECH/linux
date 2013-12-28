@@ -163,14 +163,9 @@ struct request_sock_queue {
 					     */
 };
 
-<<<<<<< HEAD
 extern int reqsk_queue_alloc(struct request_sock_queue *queue,
 			     unsigned int nr_table_entries,
 			     gfp_t flags);
-=======
-int reqsk_queue_alloc(struct request_sock_queue *queue,
-		      unsigned int nr_table_entries);
->>>>>>> b4789b8e6be3151a955ade74872822f30e8cd914
 
 void __reqsk_queue_destroy(struct request_sock_queue *queue);
 void reqsk_queue_destroy(struct request_sock_queue *queue);
