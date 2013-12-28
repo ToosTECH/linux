@@ -319,7 +319,169 @@
 
 		/* mapping between board names and dtb objects */
 		capemaps {
-			/* capemaps are only needed for special cases */
+			cape@0 {
+				part-number = "BB-BONE-DVID-01";
+
+				version@00A0 {
+					version = "00A0";
+					dtbo = "cape-bone-dvi-00A0.dtbo";
+				};
+
+				version@00A1 {
+					version = "00A1", "01";
+					dtbo = "cape-bone-dvi-00A1.dtbo";
+				};
+
+				version@00A2 {
+					version = "00A2", "A2";
+					dtbo = "cape-bone-dvi-00A2.dtbo";
+				};
+
+				version@00A3 {
+					version = "00A3";
+					dtbo = "cape-bone-dvi-00A2.dtbo";
+				};
+			};
+
+			cape@1 {
+				part-number = "BB-BONE-EMMC-2G";
+
+				version@00A0 {
+					version = "00A0";
+					dtbo = "cape-bone-2g-emmc1.dtbo";
+				};
+			};
+
+			cape@2 {
+				part-number = "BB-BONE-GEIGER";
+
+				version@00A0 {
+					version = "00A0";
+					dtbo = "cape-bone-geiger-00A0.dtbo";
+				};
+			};
+
+			cape@3 {
+				part-number = "BB-BONE-LCD3-01";
+
+				version@00A0 {
+					version = "00A0";
+					dtbo = "cape-bone-lcd3-00A0.dtbo";
+				};
+
+				version@00A2 {
+					version = "00A2";
+					dtbo = "cape-bone-lcd3-00A2.dtbo";
+				};
+			};
+
+			cape@4 {
+				part-number = "BB-BONE-WTHR-01";
+
+				version@00A0 {
+					version = "00A0";
+					dtbo = "cape-bone-weather-00A0.dtbo";
+				};
+			};
+
+			cape@5 {
+				part-number = "BB-BONELT-HDMI";
+
+				version@00A0 {
+					version = "00A0";
+					dtbo = "cape-boneblack-hdmi-00A0.dtbo";
+				};
+			};
+
+			cape@6 {
+				part-number = "BB-BONE-NIXIE";
+
+				version@00A0 {
+					version = "00A0";
+					dtbo = "cape-bone-nixie-00A0.dtbo";
+				};
+			};
+
+			cape@7 {
+				part-number = "BB-BONE-TFT-01";
+
+				version@00A0 {
+					version = "00A0";
+					dtbo = "cape-bone-adafruit-lcd-00A0.dtbo";
+				};
+			};
+
+			cape@8 {
+				part-number = "BB-BONE-RTC-01";
+
+				version@00A0 {
+					version = "00A0";
+					dtbo = "BB-BONE-RTC-00A0.dtbo";
+				};
+			};
+
+			cape@9 {
+				part-number = "BB-BONE-HEXY-01";
+
+				version@00A0 {
+					version = "00A0";
+					dtbo = "cape-bone-hexy-00A0.dtbo";
+				};
+			};
+
+			cape@10 {
+				part-number = "BB-BONE-MRF24J40";
+
+				version@00A0 {
+					version = "00A0";
+					dtbo = "cape-bone-mrf24j40-00A0.dtbo";
+				};
+			};
+
+			cape@11 {
+				part-number = "BB-BONE-EXPTEST";
+
+				version@00A0 {
+					version = "00A0";
+					dtbo = "cape-bone-exptest-00A0.dtbo";
+				};
+			};
+
+			cape@12 {
+				part-number = "BB-BONE-RS232-01";
+
+				version@00A0 {
+					version = "00A0";
+					dtbo = "BB-BONE-RS232-00A0.dtbo";
+				};
+			};
+
+			cape@13 {
+				part-number = "BB-BONE-GPS-01";
+
+				version@00A0 {
+					version = "00A0";
+					dtbo = "BB-BONE-GPS-00A0.dtbo";
+				};
+			};
+
+			cape@14 {
+				part-number = "BB-BONELT-HDMIN";
+
+				version@00A0 {
+					version = "00A0";
+					dtbo = "cape-boneblack-hdmin-00A0.dtbo";
+				};
+			};
+
+			cape@15 {
+				part-number = "2191";
+
+				version@R2 {
+					version = "R2";
+					dtbo = "cape-bebopr-R2.dtbo";
+				};
+			};
 		};
 	};
 };
