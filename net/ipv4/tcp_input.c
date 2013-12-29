@@ -2915,7 +2915,7 @@ static inline bool tcp_ack_update_rtt(struct sock *sk, const int flag,
 }
 
 /* Compute time elapsed between (last) SYNACK and the ACK completing 3WHS. */
-static void tcp_synack_rtt_meas(struct sock *sk, const u32 synack_stamp)
+void tcp_synack_rtt_meas(struct sock *sk, const u32 synack_stamp)
 {
 	struct tcp_sock *tp = tcp_sk(sk);
 	s32 seq_rtt = -1;

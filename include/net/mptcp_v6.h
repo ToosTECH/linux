@@ -40,7 +40,6 @@ extern struct proto mptcpv6_prot;
 
 struct mptcp6_request_sock {
 	struct mptcp_request_sock	mptcp6rsk_tcp;
-	struct inet6_request_sock	mptcp6rsk_inet6;
 };
 
 #ifdef CONFIG_MPTCP

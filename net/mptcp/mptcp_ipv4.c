@@ -93,8 +93,8 @@ static void mptcp_v4_reqsk_queue_hash_add(struct sock *meta_sk,
 					  struct request_sock *req,
 					  unsigned long timeout)
 {
-	const u32 h = inet_synq_hash(inet_rsk(req)->rmt_addr,
-				     inet_rsk(req)->rmt_port,
+	const u32 h = inet_synq_hash(inet_rsk(req)->ir_rmt_addr,
+				     inet_rsk(req)->ir_rmt_port,
 				     0, MPTCP_HASH_SIZE);
 
 	inet_csk_reqsk_queue_hash_add(meta_sk, req, timeout);
@@ -118,7 +118,6 @@ static void mptcp_v4_join_request(struct sock *meta_sk, struct sk_buff *skb)
 	__be32 saddr = ip_hdr(skb)->saddr;
 	__be32 daddr = ip_hdr(skb)->daddr;
 	__u32 isn = TCP_SKB_CB(skb)->when;
-	int want_cookie = 0;
 	union inet_addr addr;
 
 	tcp_clear_options(&tmp_opt);
@@ -139,15 +138,15 @@ static void mptcp_v4_join_request(struct sock *meta_sk, struct sk_buff *skb)
 	tcp_openreq_init(req, &tmp_opt, skb);
 
 	ireq = inet_rsk(req);
-	ireq->loc_addr = daddr;
-	ireq->rmt_addr = saddr;
+	ireq->ir_loc_addr = daddr;
+	ireq->ir_rmt_addr = saddr;
 	ireq->no_srccheck = inet_sk(meta_sk)->transparent;
 	ireq->opt = tcp_v4_save_options(skb);
 
 	if (security_inet_conn_request(meta_sk, skb, req))
 		goto drop_and_free;
 
-	if (!want_cookie || tmp_opt.tstamp_ok)
+	// if (!want_cookie || tmp_opt.tstamp_ok)
 		TCP_ECN_create_request(req, skb, sock_net(meta_sk));
 
 	if (!isn) {
@@ -209,13 +208,13 @@ static void mptcp_v4_join_request(struct sock *meta_sk, struct sk_buff *skb)
 			(u8 *)&mtreq->mptcp_rem_nonce, (u32 *)mptcp_hash_mac);
 	mtreq->mptcp_hash_tmac = *(u64 *)mptcp_hash_mac;
 
-	addr.ip = ireq->loc_addr;
+	addr.ip = ireq->ir_loc_addr;
 	mtreq->loc_id = mpcb->pm_ops->get_local_id(AF_INET, &addr, sock_net(meta_sk));
 	mtreq->rem_id = mopt.rem_id;
 	mtreq->low_prio = mopt.low_prio;
 	tcp_rsk(req)->saw_mpc = 1;
 
-	if (tcp_v4_send_synack(meta_sk, dst, req, skb_get_queue_mapping(skb), want_cookie))
+	if (tcp_v4_send_synack(meta_sk, dst, req, skb_get_queue_mapping(skb)))
 		goto drop_and_free;
 
 	/* Adding to request queue in metasocket */
@@ -437,9 +436,9 @@ struct sock *mptcp_v4_search_req(const __be16 rport, const __be32 raddr,
 		struct inet_request_sock *ireq = inet_rsk(rev_mptcp_rsk(mtreq));
 		meta_sk = mtreq->mpcb->meta_sk;
 
-		if (ireq->rmt_port == rport &&
-		    ireq->rmt_addr == raddr &&
-		    ireq->loc_addr == laddr &&
+		if (ireq->ir_rmt_port == rport &&
+		    ireq->ir_rmt_addr == raddr &&
+		    ireq->ir_loc_addr == laddr &&
 		    rev_mptcp_rsk(mtreq)->rsk_ops->family == AF_INET &&
 		    net_eq(net, sock_net(meta_sk)))
 			break;

@@ -470,68 +470,71 @@ extern bool tcp_try_coalesce(struct sock *sk, struct sk_buff *to,
 			     struct sk_buff *from, bool *fragstolen);
 /**** END - Exports needed for MPTCP ****/
 
-extern void tcp_init_mem(struct net *net);
-
-extern void tcp_tasklet_init(void);
-
-extern void tcp_v4_err(struct sk_buff *skb, u32);
-
-extern void tcp_shutdown (struct sock *sk, int how);
-
-extern void tcp_v4_early_demux(struct sk_buff *skb);
-extern int tcp_v4_rcv(struct sk_buff *skb);
-
-extern int tcp_v4_tw_remember_stamp(struct inet_timewait_sock *tw);
-extern int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
-		       size_t size);
-extern int tcp_sendpage(struct sock *sk, struct page *page, int offset,
-			size_t size, int flags);
-extern void tcp_release_cb(struct sock *sk);
-extern void tcp_wfree(struct sk_buff *skb);
-extern void tcp_write_timer_handler(struct sock *sk);
-extern void tcp_delack_timer_handler(struct sock *sk);
-extern int tcp_ioctl(struct sock *sk, int cmd, unsigned long arg);
-extern int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
-				 const struct tcphdr *th, unsigned int len);
-extern int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
-			       const struct tcphdr *th, unsigned int len);
-extern void tcp_rcv_space_adjust(struct sock *sk);
-extern void tcp_cleanup_rbuf(struct sock *sk, int copied);
-extern int tcp_twsk_unique(struct sock *sk, struct sock *sktw, void *twp);
-extern void tcp_twsk_destructor(struct sock *sk);
-extern ssize_t tcp_splice_read(struct socket *sk, loff_t *ppos,
-			       struct pipe_inode_info *pipe, size_t len,
-			       unsigned int flags);
-// void tcp_tasklet_init(void);
+void tcp_init_mem(void);
+// extern void tcp_init_mem(struct net *net);
 // 
-// void tcp_v4_err(struct sk_buff *skb, u32);
+// extern void tcp_tasklet_init(void);
 // 
-// void tcp_shutdown(struct sock *sk, int how);
+// extern void tcp_v4_err(struct sk_buff *skb, u32);
 // 
-// void tcp_v4_early_demux(struct sk_buff *skb);
-// int tcp_v4_rcv(struct sk_buff *skb);
+// extern void tcp_shutdown (struct sock *sk, int how);
 // 
-// int tcp_v4_tw_remember_stamp(struct inet_timewait_sock *tw);
-// int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
-// 		size_t size);
-// int tcp_sendpage(struct sock *sk, struct page *page, int offset, size_t size,
-// 		 int flags);
-// void tcp_release_cb(struct sock *sk);
-// void tcp_wfree(struct sk_buff *skb);
-// void tcp_write_timer_handler(struct sock *sk);
-// void tcp_delack_timer_handler(struct sock *sk);
-// int tcp_ioctl(struct sock *sk, int cmd, unsigned long arg);
-// int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
-// 			  const struct tcphdr *th, unsigned int len);
-// void tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
-// 			 const struct tcphdr *th, unsigned int len);
-// void tcp_rcv_space_adjust(struct sock *sk);
-// void tcp_cleanup_rbuf(struct sock *sk, int copied);
-// int tcp_twsk_unique(struct sock *sk, struct sock *sktw, void *twp);
-// void tcp_twsk_destructor(struct sock *sk);
-// ssize_t tcp_splice_read(struct socket *sk, loff_t *ppos,
-// 			struct pipe_inode_info *pipe, size_t len,
-// 			unsigned int flags);
+// extern void tcp_v4_early_demux(struct sk_buff *skb);
+// extern int tcp_v4_rcv(struct sk_buff *skb);
+// 
+// extern int tcp_v4_tw_remember_stamp(struct inet_timewait_sock *tw);
+// extern int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
+// 		       size_t size);
+// extern int tcp_sendpage(struct sock *sk, struct page *page, int offset,
+// 			size_t size, int flags);
+// extern void tcp_release_cb(struct sock *sk);
+// extern void tcp_wfree(struct sk_buff *skb);
+// extern void tcp_write_timer_handler(struct sock *sk);
+// extern void tcp_delack_timer_handler(struct sock *sk);
+// extern int tcp_ioctl(struct sock *sk, int cmd, unsigned long arg);
+// extern int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
+// 				 const struct tcphdr *th, unsigned int len);
+// extern int tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
+// 			       const struct tcphdr *th, unsigned int len);
+// extern void tcp_rcv_space_adjust(struct sock *sk);
+// extern void tcp_cleanup_rbuf(struct sock *sk, int copied);
+// extern int tcp_twsk_unique(struct sock *sk, struct sock *sktw, void *twp);
+// extern void tcp_twsk_destructor(struct sock *sk);
+// extern ssize_t tcp_splice_read(struct socket *sk, loff_t *ppos,
+// 			       struct pipe_inode_info *pipe, size_t len,
+// 			       unsigned int flags);
+extern void tcp_synack_rtt_meas(struct sock *sk, const u32 synack_stamp);
+
+void tcp_tasklet_init(void);
+
+void tcp_v4_err(struct sk_buff *skb, u32);
+
+void tcp_shutdown(struct sock *sk, int how);
+
+void tcp_v4_early_demux(struct sk_buff *skb);
+int tcp_v4_rcv(struct sk_buff *skb);
+
+int tcp_v4_tw_remember_stamp(struct inet_timewait_sock *tw);
+int tcp_sendmsg(struct kiocb *iocb, struct sock *sk, struct msghdr *msg,
+		size_t size);
+int tcp_sendpage(struct sock *sk, struct page *page, int offset, size_t size,
+		 int flags);
+void tcp_release_cb(struct sock *sk);
+void tcp_wfree(struct sk_buff *skb);
+void tcp_write_timer_handler(struct sock *sk);
+void tcp_delack_timer_handler(struct sock *sk);
+int tcp_ioctl(struct sock *sk, int cmd, unsigned long arg);
+int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
+			  const struct tcphdr *th, unsigned int len);
+void tcp_rcv_established(struct sock *sk, struct sk_buff *skb,
+			 const struct tcphdr *th, unsigned int len);
+void tcp_rcv_space_adjust(struct sock *sk);
+void tcp_cleanup_rbuf(struct sock *sk, int copied);
+int tcp_twsk_unique(struct sock *sk, struct sock *sktw, void *twp);
+void tcp_twsk_destructor(struct sock *sk);
+ssize_t tcp_splice_read(struct socket *sk, loff_t *ppos,
+			struct pipe_inode_info *pipe, size_t len,
+			unsigned int flags);
 
 static inline void tcp_dec_quickack_mode(struct sock *sk,
 					 const unsigned int pkts)
@@ -1235,13 +1238,13 @@ static inline void tcp_sack_reset(struct tcp_options_received *rx_opt)
 u32 tcp_default_init_rwnd(u32 mss);
 
 /* Determine a window scaling and initial window to offer. */
-// extern void tcp_select_initial_window(int __space, __u32 mss,
-// 				      __u32 *rcv_wnd, __u32 *window_clamp,
-// 				      int wscale_ok, __u8 *rcv_wscale,
-// 				      __u32 init_rcv_wnd, const struct sock *sk);
-void tcp_select_initial_window(int __space, __u32 mss, __u32 *rcv_wnd,
-			       __u32 *window_clamp, int wscale_ok,
-			       __u8 *rcv_wscale, __u32 init_rcv_wnd);
+extern void tcp_select_initial_window(int __space, __u32 mss,
+				      __u32 *rcv_wnd, __u32 *window_clamp,
+				      int wscale_ok, __u8 *rcv_wscale,
+				      __u32 init_rcv_wnd, const struct sock *sk);
+// void tcp_select_initial_window(int __space, __u32 mss, __u32 *rcv_wnd,
+// 			       __u32 *window_clamp, int wscale_ok,
+// 			       __u8 *rcv_wscale, __u32 init_rcv_wnd);
 
 static inline int tcp_win_from_space(int space)
 {
