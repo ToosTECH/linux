@@ -29,7 +29,6 @@
 #include <linux/clk.h>
 #include <linux/io.h>
 #include <linux/of.h>
-#include <linux/of_i2c.h>
 #include <linux/of_device.h>
 #include <linux/of_fdt.h>
 #include <linux/slab.h>
@@ -40,7 +39,6 @@
 #include <linux/ctype.h>
 #include <linux/string.h>
 #include <linux/memory.h>
-#include <linux/i2c.h>
 #include <linux/i2c/eeprom.h>
 #include <linux/kthread.h>
 #include <linux/wait.h>
