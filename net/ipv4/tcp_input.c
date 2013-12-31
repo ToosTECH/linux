@@ -5972,9 +5972,6 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 			/* Wake up lingering close() */
 			sk->sk_state_change(sk);
 			break;
-		case TCP_CLOSE:
-			if (tp->mp_killed)
-				goto discard;
 		}
 
 		if (tp->linger2 < 0 ||
@@ -6017,6 +6014,11 @@ int tcp_rcv_state_process(struct sock *sk, struct sk_buff *skb,
 			tcp_done(sk);
 			goto discard;
 		}
+		break;
+
+	case TCP_CLOSE:
+		if (tp->mp_killed)
+			goto discard;
 		break;
 	}
 
